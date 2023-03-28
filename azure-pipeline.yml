@@ -1,0 +1,57 @@
+trigger:
+  - main
+
+pool: cbxon-base
+
+stages:
+  - stage: build_stg
+    displayName: Build
+    jobs:
+      - job: build_docker_base_image
+        displayName: Build Docker Base Image
+        steps:
+          - task: Docker@2
+            displayName: Building Base Image
+            inputs:
+              command: 'build'
+              Dockerfile: '**/dockerfile'
+              arguments: '-t azuredevopsbaseagent:$(Build.BuildId) -t azuredevopsbaseagent:latest --build-arg PAT=$(System.AccessToken)'
+  - stage: test_stg
+    displayName: Test
+    jobs:
+      - job: test_docker_base_image
+        displayName: Test Docker Base Image
+        steps:
+          - checkout: none
+          - task: PowerShell@2
+            displayName: Testing Docker Image
+            inputs:
+              targetType: 'inline'
+              script: |
+                $containerId = docker run -d -it azuredevopsbaseagent "powershell .\test.ps1"
+                $logs = docker logs -f $containerId | select-string -Pattern "All Modules" -SimpleMatch
+                $logs = $logs.ToString()
+                $logs = $logs.replace("[?25h","")
+                $logs = $logs.replace("[?25l",";")
+                $logs = $logs.split(";") | select-string -Pattern "All Modules" -SimpleMatch
+
+                if($logs.ToString() -like "All Modules Present*"){
+                    Write-output $logs
+                    Exit 0
+                    }
+                else{
+                    Write-Error $logs
+                    Exit 1
+                    }
+
+  # - stage: publish_stg
+  #   displayName: Publish
+  #   jobs:
+  #     - job: publish_docker_base_image
+  #       displayName: Publish Docker Base Image
+  #       steps:
+  #         - task: Docker@2
+  #           displayName: Push Base Image
+  #           inputs:
+  #             command: 'push'
+  #             arguments: '-t azuredevopsbaseagent:$(Build.BuildId) -t azuredevopsbaseagent:latest'
